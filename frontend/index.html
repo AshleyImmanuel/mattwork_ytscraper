@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YT Lead Miner | Premium Automation</title>
+    <!-- Add a target emoji as the custom favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎯</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=5">
+</head>
+<body>
+    <div class="glow-bg"></div>
+    <div class="blob-red"></div>
+    <div class="blob-purple"></div>
+
+    <main class="container">
+        <header class="header">
+            <div class="logo">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="yt-icon">
+                    <path d="M21.582 6.186C21.4938 5.86014 21.3323 5.56079 21.1114 5.31341C20.8906 5.06603 20.6169 4.87816 20.314 4.76601C18.665 4.331 12 4.331 12 4.331C12 4.331 5.335 4.331 3.686 4.78601C3.38318 4.89816 3.10943 5.08603 2.88856 5.33341C2.6677 5.58079 2.50624 5.88014 2.418 6.20601C2 7.85401 2 11.233 2 11.233C2 11.233 2 14.612 2.418 16.26C2.50624 16.5859 2.6677 16.8852 2.88856 17.1326C3.10943 17.38 3.38318 17.5679 3.686 17.68C5.335 18.135 12 18.135 12 18.135C12 18.135 18.665 18.135 20.314 17.68C20.6169 17.5679 20.8906 17.38 21.1114 17.1326C21.3323 16.8852 21.4938 16.5859 21.582 16.26C22 14.612 22 11.233 22 11.233C22 11.233 22 7.85401 21.582 6.186Z" fill="#ff0000"/>
+                    <path d="M10 14.5L15.5 11.5L10 8.5V14.5Z" fill="white"/>
+                </svg>
+                <h1>YT LeadMiner</h1>
+            </div>
+            <p class="subtitle">High-precision lead generation targeted at top YouTube creators.</p>
+        </header>
+
+        <section class="form-panel">
+            <form id="lead-form">
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label for="keyword">Target Keyword(s) <small style="color: rgba(255,255,255,0.4); float: right;">Comma-separated for multiple</small></label>
+                        <input type="text" id="keyword" name="keyword" placeholder="e.g. Gaming Laptop, PC Build" required>
+                    </div>
+                </div>
+
+                <!-- View Count Range -->
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label>View Count Range</label>
+                        <div class="range-row">
+                            <input type="number" id="minViews" name="minViews" placeholder="Min e.g. 1000" min="0" value="1000" required>
+                            <span class="range-sep">to</span>
+                            <input type="number" id="maxViews" name="maxViews" placeholder="Max e.g. 500000" min="0" value="500000">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Subscriber Count Range -->
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label>Subscriber Count Range</label>
+                        <div class="range-row">
+                            <input type="number" id="minSubs" name="minSubs" placeholder="Min e.g. 10000" min="0" value="10000" required>
+                            <span class="range-sep">to</span>
+                            <input type="number" id="maxSubs" name="maxSubs" placeholder="Max e.g. 50000" min="0" value="50000">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row two-col">
+                    <div class="form-group">
+                        <label for="region">Target Region</label>
+                        <div class="select-wrapper">
+                            <select id="region" name="region" required>
+                                <option value="Both">Global (US & UK)</option>
+                                <option value="US">United States (US)</option>
+                                <option value="UK">United Kingdom (UK)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="dateFilter">Upload Date Filter</label>
+                        <div class="select-wrapper">
+                            <select id="dateFilter" name="dateFilter" required>
+                                <option value="This Year">This Year</option>
+                                <option value="Last Month">Last Month</option>
+                                <option value="This Week">This Week</option>
+                                <option value="Today">Today</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label for="searchPoolSize">Search Pool Size <small style="color: rgba(255,255,255,0.4); float: right;">Max API videos to fetch & scan (e.g. 500 = ~1000 quota)</small></label>
+                        <input type="number" id="searchPoolSize" name="searchPoolSize" value="500" min="50" step="50" max="5000" required>
+                    </div>
+                </div>
+
+                <button type="submit" class="submit-btn" id="startBtn">
+                    <span class="btn-text">Initialize Extraction</span>
+                    <svg class="loading-spinner hidden" viewBox="0 0 50 50">
+                        <circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
+                    </svg>
+                </button>
+            </form>
+
+            <div class="status-panel hidden" id="statusPanel">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="status-texts">
+                    <span id="statusMessage">Connecting to proxy network...</span>
+                    <span id="timer">00:00</span>
+                </div>
+                <div class="terminal-logs" id="terminalLogs">
+                    <p>> Job started...</p>
+                </div>
+            </div>
+
+            <div class="success-panel hidden" id="successPanel">
+                <div class="success-icon">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                </div>
+                <h3>Extraction Complete</h3>
+                <p>Successfully processed videos and compiled channel data.</p>
+                <div class="data-summary">
+                    <div class="stat-pill"><span id="vidCount">120</span> Videos Searched</div>
+                    <div class="stat-pill"><span id="matchCount">10</span> Channels Matched</div>
+                    <div class="stat-pill"><span id="emailCount">45</span> Emails Found</div>
+                </div>
+                <button class="download-btn" id="downloadBtn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Download Excel Report
+                </button>
+            </div>
+        </section>
+    </main>
+    <script src="/static/app.js?v=7"></script>
+</body>
+</html>

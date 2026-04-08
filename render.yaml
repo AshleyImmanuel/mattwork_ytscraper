@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: yt-leadminer
+    runtime: python
+    plan: starter
+    buildCommand: |
+      pip install -r requirements.txt
+      playwright install chromium
+      playwright install-deps
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: SCRAPER_API_KEY
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.11"

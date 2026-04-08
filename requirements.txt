@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+anyio
+google-api-python-client
+playwright
+pandas
+openpyxl
+python-dotenv
