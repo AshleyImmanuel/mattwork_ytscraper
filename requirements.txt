@@ -6,3 +6,4 @@ playwright
 pandas
 openpyxl
 python-dotenv
+playwright-stealth

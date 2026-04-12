@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
             maxSubs: parseInt(document.getElementById('maxSubs').value) || 0,
             region: document.getElementById('region').value,
             dateFilter: document.getElementById('dateFilter').value,
+            videoType: document.getElementById('videoType').value,
             searchPoolSize: parseInt(document.getElementById('searchPoolSize').value) || 500
         };
 
@@ -243,6 +244,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function getResponseErrorMessage(data, fallbackMessage) {
         if (!data) return fallbackMessage;
         if (typeof data === 'string') return data.trim().slice(0, 240) || fallbackMessage;
+        if (Array.isArray(data.detail)) {
+            // FastAPI validation error format
+            return data.detail.map(d => `${d.loc.join('.')}: ${d.msg}`).join('; ');
+        }
         if (typeof data.error === 'string' && data.error.trim()) return data.error.trim().slice(0, 240);
         if (typeof data.message === 'string' && data.message.trim()) return data.message.trim().slice(0, 240);
         if (typeof data.raw === 'string' && data.raw.trim()) return data.raw.trim().replace(/\s+/g, ' ').slice(0, 240);

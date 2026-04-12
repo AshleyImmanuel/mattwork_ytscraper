@@ -38,6 +38,11 @@ ALLOWED_COUNTRIES_BY_REGION = {
     "UK": _env_csv("YOUTUBE_ALLOWED_COUNTRIES_UK", "GB"),
 }
 
+EXCLUSION_KEYWORDS = _env_csv(
+    "YOUTUBE_EXCLUSION_KEYWORDS", 
+    "montage,edit,amv,gmv,phonk,tribute,status,alight motion,capcut,velocity,lyrics,ffx"
+)
+
 
 def _build_client():
     return build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
@@ -81,17 +86,33 @@ def _parse_duration(iso_duration: str) -> str:
     return f"{m}:{s:02d}"
 
 
-def search_videos(keyword: str, region: str, date_filter: str, max_results: int = 50, page_token: str = None):
+def _parse_duration_seconds(iso_duration: str) -> int:
+    """Convert ISO 8601 duration to total seconds."""
+    match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", iso_duration or "")
+    if not match:
+        return 0
+    h, m, s = (int(x) if x else 0 for x in match.groups())
+    return h * 3600 + m * 60 + s
+
+
+def search_videos(keyword: str, region: str, date_filter: str, max_results: int = 50, page_token: str = None, video_type: str = "All"):
     """
     Search YouTube for videos matching the keyword.
     Returns (list_of_videos, next_page_token).
+
+    video_type: "All", "Shorts", or "Long".
+    Uses YouTube's videoDuration param as a coarse pre-filter.
     """
     client = _build_client()
     published_after = _date_filter_to_rfc3339(date_filter)
 
     reg = _normalize_region_code(region)
 
-    request = client.search().list(
+    # Pre-filter via the YouTube API's videoDuration param
+    # "short" = <4 min (superset of Shorts), "long" = >20 min, "medium" = 4-20 min
+    # For Shorts we use "short" as pre-filter then post-filter to ≤60s later.
+    # For "Long" we skip the API param and just post-filter (to include 1-20 min videos too).
+    search_params = dict(
         part="snippet",
         q=keyword,
         type="video",
@@ -102,14 +123,22 @@ def search_videos(keyword: str, region: str, date_filter: str, max_results: int 
         pageToken=page_token,
         order="relevance",
     )
-    
+    if video_type == "Shorts":
+        search_params["videoDuration"] = "short"  # <4 min, refined later to ≤60s
+
+    request = client.search().list(**search_params)
     response = request.execute()
     all_video_ids = []
 
     for item in response.get("items", []):
+        # Always exclude live streams and upcoming broadcasts
+        if item.get("snippet", {}).get("liveBroadcastContent") in ("live", "upcoming"):
+            continue
+
         all_video_ids.append({
             "videoId": item["id"]["videoId"],
             "title": item["snippet"]["title"],
+            "description": item["snippet"].get("description", ""),
             "channelId": item["snippet"]["channelId"],
             "channelTitle": item["snippet"]["channelTitle"],
             "publishedAt": item["snippet"]["publishedAt"][:10],
@@ -124,6 +153,7 @@ def get_video_details(video_ids: list[str]):
     """
     Fetch video statistics (viewCount, likeCount, duration) for a batch of video IDs.
     Returns a dict keyed by video ID.
+    Also includes duration_seconds for type filtering and isLive to catch streams.
     """
     client = _build_client()
     details = {}
@@ -132,7 +162,7 @@ def get_video_details(video_ids: list[str]):
     for i in range(0, len(video_ids), 50):
         batch = video_ids[i : i + 50]
         request = client.videos().list(
-            part="statistics,contentDetails",
+            part="statistics,contentDetails,liveStreamingDetails",
             id=",".join(batch),
         )
         response = request.execute()
@@ -140,10 +170,15 @@ def get_video_details(video_ids: list[str]):
         for item in response.get("items", []):
             vid = item["id"]
             stats = item.get("statistics", {})
+            raw_duration = item["contentDetails"].get("duration", "")
+            # A video with liveStreamingDetails is or was a live stream
+            is_live = "liveStreamingDetails" in item
             details[vid] = {
                 "viewCount": int(stats.get("viewCount", 0)),
                 "likes": int(stats.get("likeCount", 0)),
-                "duration": _parse_duration(item["contentDetails"].get("duration", "")),
+                "duration": _parse_duration(raw_duration),
+                "duration_seconds": _parse_duration_seconds(raw_duration),
+                "isLive": is_live,
             }
 
     return details
@@ -188,9 +223,11 @@ def filter_results(
     min_subs: int,
     max_subs: int,
     region_req: str,
+    video_type: str = "All",
 ) -> list[dict]:
     """
     Merge video + channel data and apply view/subscriber range filters.
+    Also filters by video type (All / Shorts / Long) and excludes live streams.
     Returns a list of enriched, filtered result dicts.
     """
     results = []
@@ -206,6 +243,40 @@ def filter_results(
         vd = video_details.get(vid)
         cd = channel_details.get(cid)
         if not vd or not cd:
+            continue
+
+        # ── Exclude live streams (current, past, or scheduled) ──
+        if vd.get("isLive"):
+            continue
+
+        # ── Video type filter ──
+        dur_s = vd.get("duration_seconds", 0)
+        if video_type == "Shorts" and dur_s > 60:
+            continue
+        if video_type == "Long" and dur_s <= 60:
+            continue
+
+        # ── Exclusion Keywords Filter (Edits, Montages, etc.) ──
+        # Uses whole-word matching where possible to avoid false positives (like 'meditation' for 'edit')
+        title_upper = v["title"].upper()
+        desc_upper = v["description"].upper()
+        found_exclusion = False
+        for kw in EXCLUSION_KEYWORDS:
+            # For keywords with spaces or special chars, use simple 'in' check
+            # For simple words, attempt to use a word-boundary-like check for safety
+            if " " in kw:
+                if kw in title_upper or kw in desc_upper:
+                    found_exclusion = True
+                    break
+            else:
+                # Basic whole-word check using boundary chars
+                pattern = rf"\b{re.escape(kw)}\b"
+                if re.search(pattern, title_upper) or re.search(pattern, desc_upper):
+                    found_exclusion = True
+                    break
+        
+        if found_exclusion:
+            # Skip videos (and thus their channels) that match exclusion keywords
             continue
 
         views = vd["viewCount"]

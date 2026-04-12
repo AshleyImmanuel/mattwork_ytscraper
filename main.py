@@ -4,26 +4,39 @@ Serves the frontend, handles extraction jobs, and provides file downloads.
 """
 import os
 import sys
-import uuid
 import asyncio
+
+# Windows: Force ProactorEventLoop to support Playwright subprocesses inside FastAPI
+# This must be set as early as possible.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+import uuid
+import traceback
 from collections import deque
 from datetime import datetime, timezone
 from ipaddress import ip_address
 from time import monotonic
 from typing import Literal
 
-# Windows: Force ProactorEventLoop to support Playwright subprocesses inside FastAPI
+# Force UTF-8 encoding for Windows console
 if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    import io
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    if isinstance(sys.stderr, io.TextIOWrapper):
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 from fastapi import FastAPI, BackgroundTasks, Request, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field
 
 from services.youtube import search_videos, get_video_details, get_channel_details, filter_results
 from services.scraper import extract_emails
 from services.excel import generate_excel
+from googleapiclient.errors import HttpError
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -289,6 +302,18 @@ async def rate_limit_middleware(request: Request, call_next):
         return _request_payload_too_large(path)
     return _apply_security_headers(response, path)
 
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Log detailed 422 errors to console for debugging."""
+    print(f"\n[422] Validation Error at {request.url.path}")
+    print(f"Details: {exc.errors()}")
+    print(f"Body: {await request.body()}\n")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "error": "Validation failed. Check your inputs."},
+    )
+
 # ---- Serve frontend ----
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "frontend")
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
@@ -304,13 +329,14 @@ jobs: dict[str, dict] = {}
 
 
 class ExtractionRequest(BaseModel):
-    keyword: str = Field(min_length=1, max_length=300)
+    keyword: str = Field(min_length=1, max_length=1000)
     minViews: int = Field(default=0, ge=0)
     maxViews: int = Field(default=0, ge=0)  # 0 = no upper limit
     minSubs: int = Field(default=0, ge=0)
     maxSubs: int = Field(default=0, ge=0)   # 0 = no upper limit
     region: Literal["Both", "US", "UK"] = "Both"
     dateFilter: Literal["Today", "This Week", "Last Month", "This Year"] = "This Year"
+    videoType: Literal["All", "Shorts", "Long"] = "All"
     searchPoolSize: int = Field(default=500, ge=50, le=5000)
 
 
@@ -431,7 +457,27 @@ async def download_file(job_id: str):
 
 # ---- Background Extraction Pipeline ----
 
-async def run_extraction(job_id: str, req: ExtractionRequest):
+def run_extraction(job_id: str, req: ExtractionRequest):
+    """Entry point for the background task, running in a dedicated thread and event loop."""
+    import asyncio
+    import sys
+    
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_do_run_extraction(job_id, req))
+    finally:
+        try:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        except Exception:
+            pass
+        loop.close()
+
+
+async def _do_run_extraction(job_id: str, req: ExtractionRequest):
     """Full extraction pipeline: Search -> Filter -> Scrape Emails -> Export Excel."""
     job = jobs[job_id]
 
@@ -487,6 +533,7 @@ async def run_extraction(job_id: str, req: ExtractionRequest):
                 req.dateFilter,
                 max_results=50,
                 page_token=page_tokens[(current_kw, current_region)],
+                video_type=req.videoType,
             )
 
             if not batch_videos or not new_token:
@@ -496,6 +543,16 @@ async def run_extraction(job_id: str, req: ExtractionRequest):
                 continue
 
             page_tokens[(current_kw, current_region)] = new_token
+
+            # Trim the batch so we never overshoot the pool size
+            remaining = req.searchPoolSize - videos_searched
+            if remaining <= 0:
+                _log(job, f"Search pool reached limit ({req.searchPoolSize}). Stopping.")
+                break
+
+            if len(batch_videos) > remaining:
+                _log(job, f"Trimming last batch from {len(batch_videos)} to {remaining} items.")
+                batch_videos = batch_videos[:remaining]
 
             videos_searched += len(batch_videos)
             job["videosSearched"] = videos_searched
@@ -530,6 +587,7 @@ async def run_extraction(job_id: str, req: ExtractionRequest):
                 req.minSubs,
                 max_subs,
                 req.region,
+                video_type=req.videoType,
             )
 
             new_unique = 0
@@ -560,7 +618,7 @@ async def run_extraction(job_id: str, req: ExtractionRequest):
                     "Stopping early to protect API quota after repeated low-yield batches.",
                 )
                 break
-        _log(job, f"Completed search pool. Finalized {len(results)} channels for extraction.")
+        _log(job, f"Search pipeline finished. Total videos scanned: {videos_searched}/{req.searchPoolSize}. Found {len(results)} potential matches.")
 
         if not results:
             _log(job, "No channels matched your filter criteria.")
@@ -588,6 +646,16 @@ async def run_extraction(job_id: str, req: ExtractionRequest):
         results = await extract_emails(results, on_progress, on_log)
         _log(job, f"Email extraction complete - {job['emailsFound']} emails found.")
 
+        # Step 5b: Final Deduplication (Ensure unique channels)
+        unique_results = {}
+        for r in results:
+            cid = r.get("channelId")
+            if cid and cid not in unique_results:
+                unique_results[cid] = r
+            elif not cid:
+                unique_results[f"no-id-{uuid.uuid4()}"] = r
+        results = list(unique_results.values())
+
         # Step 6: Export to Excel
         _log(job, "Generating Excel file...")
         filepath = generate_excel(results, req.keyword)
@@ -597,7 +665,31 @@ async def run_extraction(job_id: str, req: ExtractionRequest):
         job["status"] = "completed"
         job["finishedAt"] = datetime.now(timezone.utc).isoformat()
 
+    except HttpError as e:
+        job["status"] = "failed"
+        job["finishedAt"] = datetime.now(timezone.utc).isoformat()
+        
+        # Check for quota error
+        import json
+        try:
+            err_data = json.loads(e.content.decode("utf-8"))
+            reason = err_data.get("error", {}).get("errors", [{}])[0].get("reason")
+        except Exception:
+            reason = None
+
+        if reason == "quotaExceeded":
+            job["error"] = "YouTube API Quota Exceeded. Please wait for reset or use a different key."
+            _log(job, "[ERR] YouTube API quota exceeded (10,000 unit limit reached).")
+        else:
+            job["error"] = f"YouTube API Error: {type(e).__name__}"
+            _log(job, f"[ERR] YouTube API HttpError: {e}")
+
     except Exception as e:
+        print("\n" + "="*50)
+        print(f"CRITICAL ERROR in job {job_id}")
+        traceback.print_exc()
+        print("="*50 + "\n")
+        
         job["status"] = "failed"
         job["error"] = "Extraction failed due to an internal error."
         job["finishedAt"] = datetime.now(timezone.utc).isoformat()
@@ -610,16 +702,22 @@ def _log(job: dict, message: str):
     job["logs"].append(f"[{ts}] {message}")
     if len(job["logs"]) > MAX_JOB_LOG_LINES:
         del job["logs"][: len(job["logs"]) - MAX_JOB_LOG_LINES]
-    print(f"[job] {message}")
+    try:
+        print(f"[job] {message}")
+    except UnicodeEncodeError:
+        # Fallback for environments that still can't handle UTF-8
+        print(f"[job] {message.encode('ascii', errors='replace').decode('ascii')}")
 
 
 # ---- Run ----
 if __name__ == "__main__":
     import uvicorn
 
+    print(f"INFO: Starting server on {APP_HOST}:{APP_PORT} (policy: {type(asyncio.get_event_loop_policy()).__name__})")
     uvicorn.run(
         "main:app",
         host=APP_HOST,
         port=APP_PORT,
         reload=_env_flag("UVICORN_RELOAD", default=False),
+        loop="asyncio"
     )

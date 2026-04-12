@@ -8,21 +8,16 @@ from datetime import datetime
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+def _env_csv(name: str, default_csv: str) -> list[str]:
+    raw = os.getenv(name, default_csv)
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
 # Desired column order matching the PRD output spec
-COLUMNS = [
-    "title",
-    "id",
-    "viewCount",
-    "likes",
-    "duration",
-    "date",
-    "channelName",
-    "url",
-    "channelUrl",
-    "numberOfSubscribers",
-    "EMAIL",
-    "Country",
-]
+COLUMNS = _env_csv(
+    "EXCEL_OUTPUT_COLUMNS",
+    "title,id,viewCount,likes,duration,date,channelName,url,channelUrl,numberOfSubscribers,EMAIL,Country"
+)
 
 
 def generate_excel(results: list[dict], keyword: str) -> str:

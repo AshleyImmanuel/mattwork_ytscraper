@@ -5,6 +5,17 @@ using Playwright routed through ScraperAPI proxy.
 Implements retry logic, request throttling, and external link scraping
 as specified in the PRD.
 """
+import sys
+import asyncio
+
+# Windows loop policy enforcement for Playwright
+if sys.platform == "win32":
+    try:
+        if not isinstance(asyncio.get_event_loop_policy(), asyncio.WindowsProactorEventLoopPolicy):
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    except Exception:
+        pass
+
 import re
 import os
 import socket
@@ -14,6 +25,7 @@ from ipaddress import ip_address
 from time import monotonic
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright_stealth import Stealth
 import asyncio
 from config import SCRAPER_API_KEY
 
@@ -23,11 +35,15 @@ EMAIL_REGEX = re.compile(
 )
 
 # Common junk emails to ignore
-BLACKLIST = {
-    "noreply@youtube.com", "support@google.com", "press@youtube.com",
-    "example@example.com", "name@example.com", "email@example.com",
-    "copyright@youtube.com", "legal@google.com", "abuse@youtube.com",
-}
+def _env_csv(name: str, default_csv: str) -> set[str]:
+    raw = os.getenv(name, default_csv)
+    return {item.strip().lower() for item in raw.split(",") if item.strip()}
+
+
+BLACKLIST = _env_csv(
+    "SCRAPER_EMAIL_BLACKLIST",
+    "noreply@youtube.com,support@google.com,press@youtube.com,example@example.com,name@example.com,email@example.com,copyright@youtube.com,legal@google.com,abuse@youtube.com"
+)
 
 def _env_int(name: str, default: int, minimum: int | None = None, maximum: int | None = None) -> int:
     raw = os.getenv(name)
@@ -167,10 +183,16 @@ async def _try_extract_from_about(page, channel_url: str, on_log=None) -> str | 
     Navigate to a YouTube channel's About page and extract the first
     valid public email from the page content.
     """
+    # Strategy 1: Visit /about directly (often yields metadata faster)
     about_url = channel_url.rstrip("/") + "/about"
-
-    await page.goto(about_url, wait_until="domcontentloaded", timeout=ABOUT_TIMEOUT_MS)
-    await page.wait_for_timeout(ABOUT_POST_LOAD_WAIT_MS)  # let dynamic content load
+    try:
+        if on_log: on_log(f"Visiting about page for {channel_url}...")
+        await page.goto(about_url, wait_until="domcontentloaded", timeout=ABOUT_TIMEOUT_MS)
+        await page.wait_for_timeout(ABOUT_POST_LOAD_WAIT_MS)
+    except Exception as e:
+        if on_log: on_log(f"About subpage redirect failed, trying main page: {str(e)}")
+        await page.goto(channel_url, wait_until="domcontentloaded", timeout=ABOUT_TIMEOUT_MS)
+        await page.wait_for_timeout(ABOUT_POST_LOAD_WAIT_MS)
 
     if "consent." in page.url.lower():
         if on_log: on_log(f"CAPTCHA/Consent wall detected for {channel_url}. Attempting to bypass...")
@@ -187,30 +209,56 @@ async def _try_extract_from_about(page, channel_url: str, on_log=None) -> str | 
         if on_log: on_log(f"WARNING: Google reCAPTCHA blocked access for {channel_url}.")
         # Yield to let it try fallback external links, but about page is definitely dead.
 
-    # Strategy 1: Find email in visible page text
+    # Strategy 2: Expand the '...more' popup and check for View email address
+    try:
+        # Improved selectors for the "more" button which opens the modal
+        more_selectors = [
+            'button.ytTruncatedTextAbsoluteButton', 
+            'button[aria-label*="tap for more"]',
+            '.yt-description-preview-view-model-anchor',
+            '#description-container',
+            '#description'
+        ]
+        
+        opened = False
+        for sel in more_selectors:
+            more_link = page.locator(sel)
+            if await more_link.count() > 0:
+                await more_link.first.click(timeout=CONSENT_CLICK_TIMEOUT_MS)
+                await page.wait_for_timeout(ABOUT_POST_LOAD_WAIT_MS)
+                opened = True
+                break
+        
+        if opened:
+            # Look for the email button inside the opened dialog
+            dialog = page.locator('ytd-about-channel-view-model, tp-yt-paper-dialog, #dialog')
+            if await dialog.count() > 0:
+                # Check for "Sign in to see email address"
+                dialog_text = await dialog.inner_text()
+                if "sign in" in dialog_text.lower():
+                    if on_log: on_log("  [scraper] Sign-in required for official email button.")
+                
+                btn = dialog.locator('button:has-text("View email address"), #view-email-button')
+                if await btn.count() > 0:
+                    await btn.first.click(timeout=VIEW_EMAIL_CLICK_TIMEOUT_MS)
+                    await page.wait_for_timeout(VIEW_EMAIL_POST_CLICK_WAIT_MS)
+                    
+                    # Check for reCAPTCHA which often appears right after clicking
+                    modal_html = await dialog.inner_html()
+                    if "recaptcha" in modal_html.lower() or "g-recaptcha" in modal_html.lower():
+                        if on_log: on_log("  [scraper] reCAPTCHA block detected after clicking View Email.")
+    except Exception as e:
+        if on_log: on_log(f"Could not interact with 'More info' dialog: {str(e)}")
+
     page_text = await page.inner_text("body")
     valid = _extract_emails_from_text(page_text)
     if valid:
         return valid[0]
 
-    # Strategy 2: Check the full page source / meta tags / links
     html = await page.content()
     valid = _extract_emails_from_text(html)
     if valid:
         return valid[0]
-
-    # Strategy 3: Look for a "View email address" button
-    try:
-        btn = page.locator('button:has-text("View email")')
-        if await btn.count() > 0:
-            await btn.first.click(timeout=VIEW_EMAIL_CLICK_TIMEOUT_MS)
-            await page.wait_for_timeout(VIEW_EMAIL_POST_CLICK_WAIT_MS)
-            page_text = await page.inner_text("body")
-            valid = _extract_emails_from_text(page_text)
-            if valid:
-                return valid[0]
-    except Exception:
-        pass
 
     return None
 
@@ -384,6 +432,7 @@ async def extract_emails(results: list[dict], on_progress=None, on_log=None) -> 
                 if on_log:
                     on_log(f"Testing browser extraction for: {channel_name}...")
                 page = await context.new_page()
+                await Stealth().apply_stealth_async(page)
                 try:
                     if THROTTLE_MS > 0:
                         await page.wait_for_timeout(THROTTLE_MS)
