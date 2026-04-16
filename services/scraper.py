@@ -84,7 +84,8 @@ async def extract_emails(results: list[dict], on_progress=None, on_log=None) -> 
                 ignored_domains = [
                     "youtube.com", "youtu.be", "google.com", "gstatic.com", "schema.org", "xml", "w3.org",
                     "instagram.com", "facebook.com", "twitter.com", "x.com", "tiktok.com", "linkedin.com",
-                    "apple.com", "spotify.com", "amazon.com"
+                    "apple.com", "spotify.com", "amazon.com", "amzn.to", "discord.gg", "discord.com", "patreon.com", "twitch.tv",
+                    "ytimg.com", "ggpht.com", "googlevideo.com", "googleapis.com", "googleusercontent.com", "gvt1.com"
                 ]
 
                 for l in links:
