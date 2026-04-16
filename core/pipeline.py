@@ -214,8 +214,6 @@ async def _do_run_extraction(job_id: str, req: ExtractionRequest):
                     }
                     results.append(row)
                     google_new += 1
-                    if gr["emails"]:
-                        job["emailsFound"] += 1
 
                 if google_new:
                     log_to_job(job_id, f"  [google] Added {google_new} new channels from Google discovery for '{kw}'.")

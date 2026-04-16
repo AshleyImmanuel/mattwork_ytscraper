@@ -33,6 +33,11 @@ async def extract_emails(results: list[dict], on_progress=None, on_log=None) -> 
             channel_name = row["channelName"]
             channel_id = row["channelId"]
             
+            # --- TIER 0: Pre-found Email (e.g., via Google Discovery) ---
+            if row.get("EMAIL") and row["EMAIL"] != "nil":
+                if on_progress: on_progress(idx + 1, total, channel_name, row["EMAIL"])
+                return
+                
             # --- TIER 1: YouTube API (Search Snippets + Full Desc) ---
             full_context = f"{row.get('channelDescription','')} {row.get('videoDescription','')}"
             fast_check = extract_emails_from_text(full_context)
