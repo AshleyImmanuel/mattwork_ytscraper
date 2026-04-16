@@ -241,7 +241,7 @@ async def _do_run_extraction(job_id: str, req: ExtractionRequest):
         def on_log_msg(message: str):
             log_to_job(job_id, f"  [scraper] {message}")
 
-        # Run the massive concurrent Async Playwright pipeline
+        # Run the concurrent lightweight HTTP-based extraction pipeline
         results = await extract_emails(results, on_progress, on_log_msg)
         log_to_job(job_id, f"Email extraction complete - {job['emailsFound']} emails found.")
 

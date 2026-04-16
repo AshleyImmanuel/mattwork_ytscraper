@@ -246,8 +246,13 @@ def filter_results(
         channel_name_up = v['channelTitle'].upper()
         
         # QUALITY CHECK: Niche Relevance
-        # If searching for an 'authority' genre (like podcast), we prioritize results matching PRIORITY_KEYWORDS.
-        is_priority_match = any(x in full_text for x in PRIORITY_KEYWORDS)
+        # Allow channels to bypass generic junk filters if they strongly match the user's explicit search keyword, or general authority keywords.
+        kw_upper = search_keyword.upper()
+        # Create tokens for the user's strict search string to act as priority keywords
+        user_kws = [word for word in kw_upper.split() if len(word) > 3]
+        is_priority_match = any(x in full_text for x in PRIORITY_KEYWORDS) or (
+            any(ukw in full_text for ukw in user_kws) if user_kws else (kw_upper in full_text)
+        )
         
         # QUALITY CHECK: Clip Channel Detection
         # If searching for "Long" form, we avoid channels that brand themselves as "CLIPS", "SHORTS", etc.

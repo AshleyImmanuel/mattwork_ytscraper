@@ -81,14 +81,14 @@ YOUTUBE_CHANNEL_EXCLUSION_KEYWORDS = _env_csv(
 # Priority Keywords (bypass strict exclusions if matched)
 YOUTUBE_PRIORITY_KEYWORDS = _env_csv(
     "YOUTUBE_PRIORITY_KEYWORDS",
-    "PODCAST,INTERVIEW,EPISODE,SHOW,MEDIA,PRODUCTIONS,OFFICIAL,CHANNEL,BUSINESS,CONTACT",
+    "OFFICIAL,CHANNEL,BUSINESS,CONTACT,MASTERCLASS,DOCUMENTARY",
     convert_to_upper=True
 )
 
 # Authority Keywords (for triggering stricter duration requirements)
 YOUTUBE_AUTHORITY_KEYWORDS = _env_csv(
     "YOUTUBE_AUTHORITY_KEYWORDS",
-    "PODCAST,INTERVIEW,EPISODE,SHOW,LECTURE,CONFERENCE,KEYNOTE,DOCUMENTARY",
+    "DOCUMENTARY,MASTERCLASS,LECTURE,CONFERENCE,KEYNOTE",
     convert_to_upper=True
 )
 
@@ -124,12 +124,7 @@ SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY", "")
 SCRAPER_MAX_RETRIES = _env_int("SCRAPER_MAX_RETRIES", 2, minimum=1, maximum=6)
 SCRAPER_RETRY_DELAY_MS = _env_int("SCRAPER_RETRY_DELAY_MS", 2000, minimum=250, maximum=60000)
 SCRAPER_CONCURRENCY = _env_int("SCRAPER_CONCURRENCY", 5, minimum=1, maximum=20)
-SCRAPER_HEADLESS = _env_flag("SCRAPER_HEADLESS", default=True)
-SCRAPER_MOBILE_FALLBACK = _env_flag("SCRAPER_MOBILE_FALLBACK", default=True)
-SCRAPER_MOUSE_JITTER = _env_flag("SCRAPER_MOUSE_JITTER", default=True)
-SCRAPER_COOKIES_PATH = os.getenv("SCRAPER_COOKIES_PATH", "youtube_session_cookies.json")
-SCRAPER_CAPTCHA_API_KEY = os.getenv("SCRAPER_CAPTCHA_API_KEY", "")
-SCRAPER_CAPTCHA_SERVICE = os.getenv("SCRAPER_CAPTCHA_SERVICE", "2captcha") # 2captcha or anti-captcha
+# Removed headless parameters
 SCRAPER_EMAIL_BLACKLIST = _env_csv_set(
     "SCRAPER_EMAIL_BLACKLIST",
     "noreply@youtube.com,support@google.com,press@youtube.com,example@example.com,name@example.com,email@example.com,copyright@youtube.com,legal@google.com,abuse@youtube.com"
@@ -158,16 +153,7 @@ SCRAPER_JUNK_INDICATORS = _env_csv(
 
 # ---- Timeouts & Wait Times ----
 SCRAPER_THROTTLE_MS = _env_int("SCRAPER_THROTTLE_MS", 0, minimum=0, maximum=15000)
-ABOUT_TIMEOUT_MS = _env_int("SCRAPER_ABOUT_TIMEOUT_MS", 60000, minimum=5000, maximum=120000)
-CHANNEL_TIMEOUT_MS = _env_int("SCRAPER_CHANNEL_TIMEOUT_MS", 60000, minimum=5000, maximum=120000)
-EXTERNAL_TIMEOUT_MS = _env_int("SCRAPER_EXTERNAL_TIMEOUT_MS", 20000, minimum=3000, maximum=60000)
-ABOUT_POST_LOAD_WAIT_MS = _env_int("SCRAPER_ABOUT_POST_LOAD_WAIT_MS", 2000, minimum=0, maximum=15000)
-CONSENT_CLICK_TIMEOUT_MS = _env_int("SCRAPER_CONSENT_CLICK_TIMEOUT_MS", 3000, minimum=500, maximum=20000)
-CONSENT_POST_CLICK_WAIT_MS = _env_int("SCRAPER_CONSENT_POST_CLICK_WAIT_MS", 2000, minimum=0, maximum=15000)
-VIEW_EMAIL_CLICK_TIMEOUT_MS = _env_int("SCRAPER_VIEW_EMAIL_CLICK_TIMEOUT_MS", 3000, minimum=500, maximum=20000)
-VIEW_EMAIL_POST_CLICK_WAIT_MS = _env_int("SCRAPER_VIEW_EMAIL_POST_CLICK_WAIT_MS", 2000, minimum=0, maximum=15000)
-CHANNEL_POST_LOAD_WAIT_MS = _env_int("SCRAPER_CHANNEL_POST_LOAD_WAIT_MS", 2000, minimum=0, maximum=15000)
-EXTERNAL_POST_LOAD_WAIT_MS = _env_int("SCRAPER_EXTERNAL_POST_LOAD_WAIT_MS", 2000, minimum=0, maximum=15000)
+# (Headless timeouts and waits removed)
 
 # ---- Extraction Job Constraints ----
 MAX_EXTRACT_BODY_BYTES = _env_int("MAX_EXTRACT_BODY_BYTES", 10000, minimum=1000)
