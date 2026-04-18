@@ -8,6 +8,6 @@ class ExtractionRequest(BaseModel):
     minSubs: int = Field(default=0, ge=0)
     maxSubs: int = Field(default=0, ge=0)   # 0 = no upper limit
     region: Literal["Both", "US", "UK"] = "Both"
-    dateFilter: Literal["Today", "This Week", "Last Month", "This Year"] = "This Year"
+    dateFilter: Literal["All Time", "Today", "This Week", "Last Month", "This Year"] = "This Year"
     videoType: Literal["All", "Shorts", "Long"] = "All"
-    searchPoolSize: int = Field(default=500, ge=50, le=5000)
+    leadSize: int = Field(default=100, ge=1, le=5000)

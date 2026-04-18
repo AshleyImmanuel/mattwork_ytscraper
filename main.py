@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi import Request
 
-from core.config import APP_HOST, APP_PORT, ENABLE_API_DOCS
+from core.config import APP_HOST,   APP_PORT, ENABLE_API_DOCS
 from core.middleware import rate_limit_middleware_logic
 from api.endpoints import router as api_router
 

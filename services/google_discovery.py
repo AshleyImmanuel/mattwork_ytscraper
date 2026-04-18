@@ -20,14 +20,15 @@ def _build_google_url(query: str, start: int = 0) -> str:
     encoded = quote_plus(query)
     return f"https://www.google.com/search?q={encoded}&start={start}&num=10"
 
-
 def _scraper_api_url(target_url: str) -> str:
-    """Route a URL through ScraperAPI."""
+    """Wrap a URL with ScraperAPI proxy and advanced anti-bot flags."""
     return (
         f"http://api.scraperapi.com"
         f"?api_key={SCRAPER_API_KEY}"
         f"&url={quote_plus(target_url)}"
-        f"&render=false"
+        f"&render=true"
+        f"&antibot=true"
+        f"&premium=true"
         f"&country_code=us"
     )
 

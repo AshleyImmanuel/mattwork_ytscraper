@@ -8,7 +8,8 @@ import os
 import traceback
 
 from core.config import FAST_CHECK_VIDEO_COUNT
-from services.utils.extraction import extract_emails_from_text
+from services.utils.extraction import extract_emails_from_text, extract_urls_from_text
+from services.external_scraper import scrape_multiple_urls
 
 async def extract_emails(results: list[dict], on_progress=None, on_log=None) -> list[dict]:
     """
@@ -40,6 +41,20 @@ async def extract_emails(results: list[dict], on_progress=None, on_log=None) -> 
                 row["EMAIL"] = fast_check[0]
                 if on_progress: on_progress(idx + 1, total, channel_name, fast_check[0])
                 return
+
+            # --- TIER 1.5: External Link Inspection (The "Secret Weapon") ---
+            urls = extract_urls_from_text(full_context)
+            if urls:
+                if on_log: on_log(f"  [external] Found {len(urls)} link(s) for {channel_name}, inspecting top 3...")
+                try:
+                    # Scan top 3 high-value links (Linktree, socials, personal sites)
+                    external_emails = await scrape_multiple_urls(urls[:3], on_log)
+                    if external_emails:
+                        row["EMAIL"] = external_emails[0]
+                        if on_progress: on_progress(idx + 1, total, channel_name, external_emails[0])
+                        return
+                except Exception as e:
+                    if on_log: on_log(f"  [external] Error inspecting links for {channel_name}: {str(e)[:50]}")
 
             # --- TIER 2: Direct Handle Dorking (Deep Scan) ---
             from services.google_discovery import dork_specific_channel

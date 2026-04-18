@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 
 # Load .env file at the root
 # Since this file is in core/, we need to look up one level
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"), override=True)
 
 def _env_flag(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
@@ -156,6 +156,11 @@ MAX_API_FETCHES = _env_int("MAX_API_FETCHES", 100, minimum=1, maximum=500)
 MAX_STALE_BATCHES = _env_int("MAX_STALE_BATCHES", 8, minimum=1, maximum=100)
 MIN_MATCH_TARGET_ABSOLUTE = _env_int("MIN_MATCH_TARGET_ABSOLUTE", 20, minimum=1)
 MIN_MATCH_TARGET_DIVISOR = _env_int("MIN_MATCH_TARGET_DIVISOR", 10, minimum=1)
+
+# ---- Web Crawler Settings (Apify-style page crawling) ----
+CRAWLER_ENABLED = _env_flag("CRAWLER_ENABLED", default=True)
+CRAWLER_DELAY_MS = _env_int("CRAWLER_DELAY_MS", 1000, minimum=0, maximum=10000)
+CRAWLER_MAX_PAGES = _env_int("CRAWLER_MAX_PAGES", 20, minimum=1, maximum=50)
 
 # NEW: Deep Scan Settings
 DEEP_SCAN_LIMIT = _env_int("DEEP_SCAN_LIMIT", 15, minimum=1, maximum=50)

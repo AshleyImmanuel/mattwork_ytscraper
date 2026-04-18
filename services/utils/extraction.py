@@ -196,3 +196,59 @@ def extract_emails_from_text(text: str) -> list[str]:
         final_unique.append(email)
             
     return final_unique
+
+
+def extract_urls_from_text(text: str) -> list[str]:
+    """Find specific high-value external links (Linktree, etc.) in text."""
+    if not text:
+        return []
+
+    # Regex for general URLs
+    URL_REGEX = re.compile(
+        r'https?://(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&//=]*)',
+        re.IGNORECASE
+    )
+    
+    found_urls = URL_REGEX.findall(text)
+    
+    # Domains to prioritize (contact-heavy sites)
+    PRIORITY_DOMAINS = [
+        "linktr.ee", "beacons.ai", "beacons.page", "campsite.bio", 
+        "bio.link", "solo.to", "shor.by", "flow.page", "tap.bio",
+        "instagram.com", "facebook.com", "twitter.com", "x.com",
+        "shopify.com", "myshopify.com"
+    ]
+    
+    # Domains to ignore (junk/redirects)
+    IGNORE_DOMAINS = [
+        "youtube.com", "youtu.be", "google.com", "googlevideo.com",
+        "ytimg.com", "gstatic.com", "doubleclick.net", "facebook.com/tr"
+    ]
+
+    filtered = []
+    seen = set()
+    
+    for url in found_urls:
+        url_low = url.lower().strip().rstrip("/.,!?;:")
+        
+        # 1. Skip if specifically ignored
+        if any(d in url_low for d in IGNORE_DOMAINS):
+            continue
+            
+        # 2. Extract domain for analysis
+        parsed = urllib.parse.urlparse(url_low)
+        domain = parsed.netloc.replace("www.", "")
+        
+        # 3. Prioritize or check if it looks like a personal site
+        is_priority = any(p in domain for p in PRIORITY_DOMAINS)
+        is_personal = len(domain.split(".")) >= 2 and not is_priority
+        
+        if (is_priority or is_personal) and url_low not in seen:
+            # Re-rank priority to the front
+            if is_priority:
+                filtered.insert(0, url_low)
+            else:
+                filtered.append(url_low)
+            seen.add(url_low)
+            
+    return filtered[:10]  # Cap at 10 links for performance

@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
             region: document.getElementById('region').value,
             dateFilter: document.getElementById('dateFilter').value,
             videoType: document.getElementById('videoType').value,
-            searchPoolSize: parseInt(document.getElementById('searchPoolSize').value) || 500
+            leadSize: parseInt(document.getElementById('leadSize').value) || 100
         };
 
         stopPolling();
