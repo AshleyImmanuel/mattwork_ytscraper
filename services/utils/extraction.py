@@ -139,13 +139,25 @@ def extract_emails_from_text(text: str) -> list[str]:
         if len(parts) != 2 or "." not in parts[1] or parts[1].startswith("."):
             continue
         
+        # New restriction: If the email contains characters that strongly suggest a URL path or junk
+        if any(c in e_low for c in ["/", "\\", "?", "=", "&", "%", "$", "#"]):
+            continue
+
         # Prose Filter: Check if the TLD is a common English word
         domain_parts = parts[1].split(".")
         tld = domain_parts[-1]
+        
+        # Reject if the TLD is a known media extension
+        MEDIA_EXTS = {"png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "ico", "mp4", "mp3", "pdf", "exe"}
+        if tld in MEDIA_EXTS:
+            continue
+
         if tld in PROSE_TLDS:
             continue
             
         # Junk filter: checks if the email ITSELF contains junk words
+        # We check this twice: once on the raw e_low and once on a more normalized version
+        # to ensure strings like "image-png" or ".png" both trigger it.
         if any(junk in e_low for junk in JUNK_INDICATORS):
             continue
 
@@ -154,7 +166,7 @@ def extract_emails_from_text(text: str) -> list[str]:
             continue
 
         # Sanity: too many dots or too long
-        if len(e_low) > 80 or e_low.count(".") > 5 or ".." in e_low:
+        if len(e_low) > 60 or e_low.count(".") > 4 or ".." in e_low:
             continue
 
         # Reject if domain is just a number or too short

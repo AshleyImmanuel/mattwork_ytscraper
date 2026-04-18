@@ -176,10 +176,49 @@ def discover_channels_via_google(
                     on_log(f"[google] Error on page {page + 1}: {str(e)[:80]}")
                 break
 
-    if on_log:
-        on_log(
-            f"[google] Discovery complete. Total channels found: {len(all_results)}. "
-            f"Channels with emails: {sum(1 for r in all_results if r['emails'])}"
-        )
-
     return all_results
+
+
+def dork_specific_channel(
+    channel_name: str,
+    on_log=None,
+) -> list[str]:
+    """
+    Perform a targeted Google search for a specific channel to find their email across the web.
+    """
+    from core.config import DIRECT_DORKING_ENABLED, DIRECT_DORKING_QUERIES
+    if not DIRECT_DORKING_ENABLED or not SCRAPER_API_KEY:
+        return []
+
+    found_emails = []
+    
+    # We only use the first few queries to save credits and keep it fast
+    queries = [q.replace("{name}", channel_name) for q in DIRECT_DORKING_QUERIES[:2]]
+
+    for query in queries:
+        google_url = _build_google_url(query, 0)
+        api_url = _scraper_api_url(google_url)
+
+        try:
+            resp = requests.get(api_url, timeout=30)
+            if resp.status_code == 200:
+                # IMPORTANT: We "textify" the HTML before extraction.
+                # Running regex on raw HTML picks up emails from <img> src, <link> href, etc.
+                # which causes image filenames to be identified as emails.
+                soup = BeautifulSoup(resp.text, "html.parser")
+                visible_text = soup.get_text(separator=" ", strip=True)
+                
+                emails = extract_emails_from_text(visible_text)
+                for e in emails:
+                    if e not in found_emails:
+                        found_emails.append(e)
+            
+            # If we already found some emails, we can stop to save credits
+            if found_emails:
+                break
+        except Exception as e:
+            if on_log:
+                on_log(f"[dork] Error dorking '{channel_name}': {str(e)[:50]}")
+            continue
+
+    return found_emails

@@ -6,7 +6,7 @@ import traceback
 from datetime import datetime, timezone
 from googleapiclient.errors import HttpError
 
-from services.youtube import search_videos, get_video_details, get_channel_details, filter_results, get_recent_videos, is_strictly_rejected
+from services.youtube import search_videos, get_video_details, get_channel_details, filter_results, is_strictly_rejected
 from services.google_discovery import discover_channels_via_google
 from services.scraper import extract_emails
 from services.excel import generate_excel
@@ -120,43 +120,44 @@ async def _do_run_extraction(job_id: str, req: ExtractionRequest):
             # even if they are rejected by the filters below.
             seen_channel_ids.update(channel_ids)
 
-            # --- First: Check for Emails in Descriptions! ---
+            # --- Process Candidates (Inclusive Mode) ---
             from services.utils.extraction import extract_emails_from_text
-            candidates_with_emails = []
+            processed_candidates = []
             for v in candidate_videos:
                 vid, cid = v["videoId"], v["channelId"]
                 vd, cd = video_details.get(vid, {}), channel_details.get(cid, {})
                 if not vd or not cd: continue
                 
+                # Check for email in the fetched metadata
                 desc = f"{cd.get('description', '')} {vd.get('description', '')}"
                 found = extract_emails_from_text(desc)
-                if found:
-                    v["EMAIL"] = found[0]
-                    # Update with full metadata for filtering AND final spreadsheet
-                    v["title"] = vd.get("title", v["title"])
-                    v["description"] = vd.get("description", v["description"])
-                    candidates_with_emails.append(v)
+                v["EMAIL"] = found[0] if found else "nil"
+                
+                # Ensure full metadata is carried forward
+                v["title"] = vd.get("title", v["title"])
+                v["description"] = vd.get("description", v["description"])
+                processed_candidates.append(v)
 
-            # Trim the batch so we never overshoot the pool size of channels WITH EMAILS
+            # Trim the batch so we never overshoot the pool size target
             remaining = req.searchPoolSize - videos_searched
             if remaining <= 0:
-                log_to_job(job_id, f"Search pool reached explicit limit ({req.searchPoolSize} channels with emails).")
+                log_to_job(job_id, f"Search pool reached explicit limit ({req.searchPoolSize} channels processed).")
                 break
 
-            if len(candidates_with_emails) > remaining:
+            if len(processed_candidates) > remaining:
                 log_to_job(job_id, f"Trimming last batch to fit exact pool size of {req.searchPoolSize}.")
-                candidates_with_emails = candidates_with_emails[:remaining]
+                processed_candidates = processed_candidates[:remaining]
 
-            videos_searched += len(candidates_with_emails)
+            videos_searched += len(processed_candidates)
             job["videosSearched"] = videos_searched
-            log_to_job(job_id, f"Found {len(candidates_with_emails)} channels with an email in their description this batch. (Total pool: {videos_searched}/{req.searchPoolSize})")
+            log_to_job(job_id, f"Processed {len(processed_candidates)} channels this batch. (Total scanned: {videos_searched}/{req.searchPoolSize})")
 
             max_views = req.maxViews if req.maxViews > 0 else None
             max_subs = req.maxSubs if req.maxSubs > 0 else None
 
-            # --- Second: "then use our filters to get the optimal result" ---
+            # --- Second: Apply numerical filters ---
             batch_results = filter_results(
-                candidates_with_emails,
+                processed_candidates,
                 video_details,
                 channel_details,
                 req.minViews,
@@ -213,63 +214,38 @@ async def _do_run_extraction(job_id: str, req: ExtractionRequest):
 
             if google_discovered_ids:
                 log_to_job(job_id, f"Fetching YouTube metadata for {len(google_discovered_ids)} discovered channels...")
-                # Fetch real stats (subscribers, etc.) for Google leads.
-                # Note: get_channel_details now supports handles!
                 google_details = get_channel_details(google_discovered_ids)
                 
-                # To make these leads truly premium, fetch the latest video for each to get real views/duration
-                log_to_job(job_id, "  [google] Fetching latest video stats for richer lead data...")
-                latest_video_ids = []
-                channel_to_latest_vid = {}
-                
-                for ch_id in google_discovered_ids:
-                    # Resolve to real channel ID if it was a handle
-                    real_cid = google_details.get(ch_id, {}).get("id", ch_id)
-                    try:
-                        # Use get_recent_videos(..., 1) to find the latest upload
-                        vids = await asyncio.to_thread(get_recent_videos, real_cid, 1)
-                        # The first video (vid[0]) in get_recent_videos is often the channel description placeholder
-                        # We want the first REAL video, which is vid[1] if vid[0] is placeholder
-                        real_vid = None
-                        for v in vids:
-                            if v["videoId"] != "CD":
-                                real_vid = v
-                                break
-                        
-                        if real_vid:
-                            latest_video_ids.append(real_vid["videoId"])
-                            channel_to_latest_vid[ch_id] = real_vid["videoId"]
-                    except Exception:
-                        continue
-                
-                # Fetch video details in batch
-                discovery_video_details = {}
-                if latest_video_ids:
-                    discovery_video_details = get_video_details(latest_video_ids)
-
                 google_new = 0
                 for ch_id in google_discovered_ids:
                     gr = google_candidates[ch_id]
                     gd = google_details.get(ch_id, {})
-                    vid_id = channel_to_latest_vid.get(ch_id)
-                    vd = discovery_video_details.get(vid_id, {}) if vid_id else {}
                     
+                    # --- Extract Email ---
+                    email = gr["emails"][0] if gr["emails"] else "nil"
+                    if email == "nil":
+                        from services.utils.extraction import extract_emails_from_text
+                        desc_to_check = f"{gd.get('description', '')} {gr.get('snippet', '')}"
+                        found = extract_emails_from_text(desc_to_check)
+                        if found:
+                            email = found[0]
+
                     row = {
-                        "title": f"[Discovery] {vd.get('title') or gd.get('title', ch_id)}",
-                        "id": vid_id or "",
-                        "channelId": gd.get("id", ch_id), # Ensure we use real UC... ID if found
-                        "viewCount": vd.get("viewCount") or gd.get("viewCount", 0), # Best: Video views, Fallback: Channel Total
-                        "date": vd.get("date", ""),
-                        "likes": vd.get("likes", 0),
-                        "duration": vd.get("duration", ""),
-                        "url": f"https://www.youtube.com/watch?v={vid_id}" if vid_id else gr["channelUrl"],
+                        "title": f"[Discovery] {gd.get('title', ch_id)}",
+                        "id": "",
+                        "channelId": gd.get("id", ch_id),
+                        "viewCount": gd.get("viewCount", 0),
+                        "date": "",
+                        "likes": 0,
+                        "duration": "",
+                        "url": gr["channelUrl"],
                         "channelName": gd.get('title', ch_id),
                         "channelUrl": gr["channelUrl"],
                         "numberOfSubscribers": gd.get('subscriberCount', 0),
                         "Country": gd.get('country') or req.region,
                         "channelDescription": gd.get('description') or gr.get("snippet", ""),
-                        "videoDescription": vd.get("description", ""),
-                        "EMAIL": gr["emails"][0] if gr["emails"] else "nil",
+                        "videoDescription": gr.get("snippet", ""),
+                        "EMAIL": email,
                     }
 
                     # --- Numerical Filtering ---
@@ -278,22 +254,20 @@ async def _do_run_extraction(job_id: str, req: ExtractionRequest):
                     max_views = req.maxViews if req.maxViews > 0 else None
                     max_subs = req.maxSubs if req.maxSubs > 0 else None
 
-                    if views < req.minViews or (max_views and views > max_views):
-                        log_to_job(job_id, f"  [google] Skipped '{row['channelName']}' (Views {views} outside range {req.minViews}-{req.maxViews}).")
+                    if (row["viewCount"] > 0) and (views < req.minViews or (max_views and views > max_views)):
+                        log_to_job(job_id, f"  [google] Skipped '{row['channelName']}' (Views {views} outside range).")
                         continue
                     if subs < req.minSubs or (max_subs and subs > max_subs):
-                        log_to_job(job_id, f"  [google] Skipped '{row['channelName']}' (Subs {subs} outside range {req.minSubs}-{req.maxSubs}).")
+                        log_to_job(job_id, f"  [google] Skipped '{row['channelName']}' (Subs {subs} outside range).")
                         continue
 
-                    # --- Final Quality Check: Apply Strict Language Filtering to Discovery leads! ---
+                    # --- Final Quality Check: Apply Strict Language Filtering ---
                     if is_strictly_rejected(
                         row["title"],
-                        f"{row['channelDescription']} {row['videoDescription']}",
-                        row["channelName"],
-                        vd.get("audioLanguage"),
-                        vd.get("defaultLanguage")
+                        row['channelDescription'],
+                        row["channelName"]
                     ):
-                        log_to_job(job_id, f"  [google] Skipped '{row['channelName']}' (Matches strict language exclusion).")
+                        log_to_job(job_id, f"  [google] Skipped '{row['channelName']}' (Matches language exclusion).")
                         continue
 
                     results.append(row)

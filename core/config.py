@@ -136,7 +136,9 @@ SCRAPER_PROSE_TLDS = _env_csv_set(
 )
 SCRAPER_JUNK_INDICATORS = _env_csv(
     "SCRAPER_JUNK_INDICATORS",
-    "window.,loc@ion,p@reon,patreon.com,substack.com,instagram.com,facebook.com,twitter.com,linkedin.com,tiktok.com,href=,location.,javascript:,onclick,onload,.location,.href,ion.href,script,document.,@media,@font-face,@charset,@import",
+    "window.,loc@ion,p@reon,patreon.com,substack.com,instagram.com,facebook.com,twitter.com,linkedin.com,tiktok.com,href=,location.,javascript:,onclick,onload,.location,.href,ion.href,script,document.,@media,@font-face,@charset,@import,"
+    ".png,.jpg,.jpeg,.webp,.gif,.svg,.bmp,.ico,.png?,.jpg?,.jpeg?,.webp?,.gif?,"
+    "assets/,/static/,/images/,/thumbs/,/thumbnails/,/v/,/c/,/u/,?v=,=http,http:,https:",
     convert_to_upper=False
 )
 
@@ -168,6 +170,15 @@ GOOGLE_DISCOVERY_QUERIES = _env_csv(
     "GOOGLE_DISCOVERY_QUERIES",
     'site:youtube.com "{keyword}" "email" OR "contact" OR "business inquiries",'
     'site:youtube.com/@* "{keyword}" email',
+    convert_to_upper=False
+)
+
+# New: Direct Handle Dorking for missing emails
+DIRECT_DORKING_ENABLED = _env_flag("DIRECT_DORKING_ENABLED", default=True)
+DIRECT_DORKING_QUERIES = _env_csv(
+    "DIRECT_DORKING_QUERIES",
+    'site:twitter.com OR site:instagram.com OR site:facebook.com "{name}" email,'
+    '"{name}" "email" OR "contact" OR "inquiries"',
     convert_to_upper=False
 )
 

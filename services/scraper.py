@@ -9,7 +9,6 @@ import traceback
 
 from core.config import FAST_CHECK_VIDEO_COUNT
 from services.utils.extraction import extract_emails_from_text
-from services.youtube import get_recent_videos
 
 async def extract_emails(results: list[dict], on_progress=None, on_log=None) -> list[dict]:
     """
@@ -42,20 +41,17 @@ async def extract_emails(results: list[dict], on_progress=None, on_log=None) -> 
                 if on_progress: on_progress(idx + 1, total, channel_name, fast_check[0])
                 return
 
-            # --- TIER 2: YouTube API (Recent Video Descriptions) ---
-            if FAST_CHECK_VIDEO_COUNT > 0:
-                try:
-                    recent_vids = await asyncio.to_thread(get_recent_videos, channel_id, FAST_CHECK_VIDEO_COUNT)
-                    all_vids_text = "".join([f" {vid['title']} {vid['description']}" for vid in recent_vids])
-                    
-                    v_emails = extract_emails_from_text(all_vids_text)
-                    if v_emails:
-                        row["EMAIL"] = v_emails[0]
-                        if on_log: on_log(f"  [api] SUCCESS: Found in video descriptions for {channel_name}")
-                        if on_progress: on_progress(idx + 1, total, channel_name, v_emails[0])
-                        return
-                except Exception:
-                    pass
+            # --- TIER 2: Direct Handle Dorking (Deep Scan) ---
+            from services.google_discovery import dork_specific_channel
+            try:
+                dork_emails = await asyncio.to_thread(dork_specific_channel, channel_name, on_log)
+                if dork_emails:
+                    row["EMAIL"] = dork_emails[0]
+                    if on_log: on_log(f"  [dork] SUCCESS: Found via deep search for {channel_name}")
+                    if on_progress: on_progress(idx + 1, total, channel_name, dork_emails[0])
+                    return
+            except Exception:
+                pass
 
             # If we reach here, we didn't find an email in any description.
             row["EMAIL"] = "nil"
@@ -64,11 +60,7 @@ async def extract_emails(results: list[dict], on_progress=None, on_log=None) -> 
     tasks = [process_channel(idx, row) for idx, row in enumerate(results)]
     await asyncio.gather(*tasks)
 
-    # NEW: "ignore the rest" -> Filter out channels that didn't yield an email
-    filtered_results = [r for r in results if r.get("EMAIL") and r["EMAIL"] != "nil"]
-    
     if on_log:
-        dropped = len(results) - len(filtered_results)
-        on_log(f"Filtered out {dropped} channels that had no email in descriptions.")
+        on_log(f"Extraction complete for {len(results)} candidates.")
 
-    return filtered_results
+    return results
