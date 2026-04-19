@@ -75,6 +75,10 @@ async def extract_emails(results: list[dict], on_progress=None, on_log=None) -> 
     tasks = [process_channel(idx, row) for idx, row in enumerate(results)]
     await asyncio.gather(*tasks)
 
+    # Clean up the local browser if it was used
+    from services.external_scraper import BrowserManager
+    await BrowserManager.close()
+
     if on_log:
         on_log(f"Extraction complete for {len(results)} candidates.")
 
