@@ -163,8 +163,8 @@ CRAWLER_DELAY_MS = _env_int("CRAWLER_DELAY_MS", 1000, minimum=0, maximum=10000)
 CRAWLER_MAX_PAGES = _env_int("CRAWLER_MAX_PAGES", 20, minimum=1, maximum=50)
 
 # Local Browser Settings (Playwright)
-USE_LOCAL_BROWSER = _env_flag("USE_LOCAL_BROWSER", default=True)
-BROWSER_HEADLESS = _env_flag("BROWSER_HEADLESS", default=False)
+USE_LOCAL_BROWSER = _env_flag("USE_LOCAL_BROWSER", default=False)
+BROWSER_HEADLESS = _env_flag("BROWSER_HEADLESS", default=True)
 BROWSER_TIMEOUT_MS = _env_int("BROWSER_TIMEOUT_MS", 30000, minimum=5000)
 
 # NEW: Deep Scan Settings
