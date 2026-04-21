@@ -174,11 +174,46 @@ curl -X POST http://localhost:8001/api/extract \
 
 ---
 
+## 🔐 Persistent Hosting & Session Management
+
+To run YT LeadMiner on a hosted server (like Render, Heroku, or a VPS) while maintaining a signed-in state or avoiding frequent CAPTCHAs, follow this session-persistence workflow.
+
+### 1. IP Persistence (ScraperAPI Sessions)
+By default, the scraper uses a fixed `BROWSER_PROXY_SESSION` in your `.env`. This ensures ScraperAPI assigns you the same IP address for all requests in a session. 
+- **Benefit**: Google is less likely to flag your session as suspicious if the IP remains consistent.
+
+### 2. Auth Persistence (Cookie Injection)
+Since you cannot manually solve captchas or sign in on a headless server, you can export your local session cookies and inject them into the server.
+
+#### Step-by-Step implementation:
+1. **Sign in locally**: Run `python scratch/sign_in_helper.py`. High-quality cookies are generated in `.browser_data`.
+2. **Export Cookies**: Run `python scratch/export_cookies.py`.
+3. **Copy the Output**: The script will generate a long Base64 string in `scratch/exported_cookies.txt`.
+4. **Set Environment Variable**: Add a new environment variable on your hosting provider:
+   - **Key**: `YOUTUBE_COOKIES`
+   - **Value**: `[The long Base64 string fromexported_cookies.txt]`
+
+> [!IMPORTANT]
+> The `BrowserManager` automatically detects this variable and injects the cookies into every browser context, effectively "cloning" your logged-in session to the cloud.
+
+---
+
 ## 🌐 Deployment
 
-A `render.yaml` is included for one-click deployment on [Render](https://render.com). Set `YOUTUBE_API_KEY` and `SCRAPER_API_KEY` as environment variables in your Render dashboard.
+A `render.yaml` is included for one-click deployment on [Render](https://render.com).
 
-> **Note:** When deploying to cloud platforms, set `USE_LOCAL_BROWSER=False` and `BROWSER_HEADLESS=True` since most hosting providers don't support headed browser sessions.
+### Render.com Setup
+1. Fork this repository.
+2. Connect the repository to Render.
+3. Configure the following **Environment Variables**:
+   - `YOUTUBE_API_KEY`: Your Google API key.
+   - `SCRAPER_API_KEY`: Your ScraperAPI key.
+   - `USE_LOCAL_BROWSER`: `False` (Recommended for hosted environments).
+   - `BROWSER_HEADLESS`: `True`.
+   - `YOUTUBE_COOKIES`: (Optional) Your exported Base64 session string.
+
+> [!WARNING]
+> While `USE_LOCAL_BROWSER=True` works locally, most cloud providers (like Render) require specialized Docker images to run Playwright with a GUI. Setting `USE_LOCAL_BROWSER=False` switches the search crawler to use ScraperAPI's proxy network instead of a local browser instance.
 
 ---
 
